@@ -1,0 +1,2 @@
+# ANALITICA-CHATGPT
+Con Chatgpt
