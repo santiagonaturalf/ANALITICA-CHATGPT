@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; color: #333; font-size: 14px; }
+    h1 { margin: 0 0 10px; color: #2c3e50; font-size: 20px; }
+    .controls { display: flex; gap: 20px; align-items: center; padding: 15px; background: #f7f7f7; border-radius: 8px; margin-bottom: 20px; }
+    .controls .group { display: flex; flex-direction: column; }
+    .controls label { font-size: 12px; color: #666; margin-bottom: 5px; }
+    .controls input[type="number"], .controls input[type="text"] { width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    .radio-group label { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f2f2f2; }
+    .actions { margin-top: 20px; }
+    .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; background: #2d7dd2; color: #fff; font-weight: 600; font-size: 14px; }
+    .btn:disabled { background: #ccc; }
+    .right { text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>Generador de Cotizaciones</h1>
+
+  <div class="controls">
+    <div class="group">
+      <label>Tipo de Cotización</label>
+      <div class="radio-group">
+        <label><input type="radio" name="tipo" value="mayorista" checked> Mayorista</label>
+        <label><input type="radio" name="tipo" value="detalle"> Al Detalle</label>
+      </div>
+    </div>
+    <div class="group">
+      <label for="ivaPct">IVA (%)</label>
+      <input type="number" id="ivaPct" value="19">
+    </div>
+    <div class="group">
+      <label for="margenPct">Margen (%)</label>
+      <input type="number" id="margenPct" value="25">
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Producto</th>
+        <th class="right">Costo Base</th>
+        <th class="right">Precio de Venta</th>
+      </tr>
+    </thead>
+    <tbody id="product-table-body">
+      <? for (var i = 0; i < productos.length; i++) { ?>
+        <tr>
+          <td><?= productos[i].nombre ?></td>
+          <td class="right" data-costo="<?= productos[i].costo ?>"><?= productos[i].costo ?></td>
+          <td class="right" data-venta=""></td>
+        </tr>
+      <? } ?>
+    </tbody>
+  </table>
+
+  <div class="actions">
+    <button class="btn" id="generateSheetBtn" disabled>Generar Hoja de Cotización</button>
+  </div>
+  <p id="status" style="margin-top:10px;"></p>
+
+  <script>
+    // Helper function to format numbers as CLP currency
+    function formatCLP(num) {
+      if (isNaN(num)) return "";
+      return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(num);
+    }
+
+    // Function to calculate and update prices in the table
+    function updatePrices() {
+      var tipo = document.querySelector('input[name="tipo"]:checked').value;
+      if (tipo !== 'mayorista') {
+        alert('La cotización "Al Detalle" no está implementada todavía.');
+        document.getElementById('generateSheetBtn').disabled = true;
+        return;
+      }
+
+      var ivaPct = parseFloat(document.getElementById('ivaPct').value) / 100;
+      var margenPct = parseFloat(document.getElementById('margenPct').value) / 100;
+
+      if (isNaN(ivaPct) || isNaN(margenPct)) {
+        // Don't show an alert on every keystroke, just fail silently
+        return;
+      }
+
+      var tableBody = document.getElementById('product-table-body');
+      var rows = tableBody.getElementsByTagName('tr');
+
+      for (var i = 0; i < rows.length; i++) {
+        var costCell = rows[i].cells[1];
+        var priceCell = rows[i].cells[2];
+        var baseCost = parseFloat(costCell.getAttribute('data-costo'));
+
+        var finalPrice = baseCost * (1 + ivaPct) * (1 + margenPct);
+
+        priceCell.textContent = formatCLP(finalPrice);
+        priceCell.setAttribute('data-venta', finalPrice);
+      }
+
+      document.getElementById('generateSheetBtn').disabled = false;
+      document.getElementById('status').textContent = "Precios actualizados. Listo para generar la hoja.";
+    }
+
+    // Event listeners for real-time updates
+    document.getElementById('ivaPct').addEventListener('input', updatePrices);
+    document.getElementById('margenPct').addEventListener('input', updatePrices);
+    document.querySelectorAll('input[name="tipo"]').forEach(function(radio) {
+      radio.addEventListener('change', updatePrices);
+    });
+
+    // Event listener for the generate sheet button
+    document.getElementById('generateSheetBtn').addEventListener('click', function() {
+      this.disabled = true;
+      document.getElementById('status').textContent = "Generando hoja de cotización...";
+
+      var ivaPctInput = document.getElementById('ivaPct').value;
+      var margenPctInput = document.getElementById('margenPct').value;
+
+      var tableBody = document.getElementById('product-table-body');
+      var rows = tableBody.getElementsByTagName('tr');
+      var quoteData = [];
+
+      for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].cells;
+        var venta = parseFloat(cells[2].getAttribute('data-venta'));
+        if (!isNaN(venta)) {
+          quoteData.push({
+            nombre: cells[0].textContent,
+            costo: parseFloat(cells[1].getAttribute('data-costo')),
+            ivaPct: parseFloat(ivaPctInput) / 100,
+            margenPct: parseFloat(margenPctInput) / 100,
+            precioVenta: venta
+          });
+        }
+      }
+
+      if (quoteData.length > 0) {
+        google.script.run
+          .withSuccessHandler(function(response) {
+            document.getElementById('status').textContent = response;
+            // Optionally, close the dialog after a delay
+            setTimeout(function() { google.script.host.close(); }, 3000);
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('status').textContent = "Error: " + error.message;
+            document.getElementById('generateSheetBtn').disabled = false;
+          })
+          .crearHojaDeCotizacion(quoteData);
+      } else {
+        document.getElementById('status').textContent = "No hay datos de precios para generar la hoja.";
+        this.disabled = false;
+      }
+    });
+
+    // Initial formatting and price calculation on load
+    document.addEventListener('DOMContentLoaded', function() {
+        var tableBody = document.getElementById('product-table-body');
+        var rows = tableBody.getElementsByTagName('tr');
+        for (var i = 0; i < rows.length; i++) {
+            var costCell = rows[i].cells[1];
+            var baseCost = parseFloat(costCell.getAttribute('data-costo'));
+            costCell.textContent = formatCLP(baseCost);
+        }
+        // Also run updatePrices on load to populate the initial sales price
+        updatePrices();
+    });
+
+  </script>
+</body>
+</html>

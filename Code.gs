@@ -39,22 +39,17 @@ const DASH_LOW_PCT_RED  = 0.15;  // pinta fila roja si margen% < 15%
 
 // ============== MENÚ ==============
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('🔥 Analítica Pro (simple)')
+  SpreadsheetApp.getUi()
+    .createMenu('🔥 Analítica Pro (simple)')
     .addItem('1) Preparar INPUTS (IMPORTRANGE)', 'prepararInputs')
     .addItem('2) Generar SKU_A', 'generarSKU_A')
     .addItem('3) Generar Análisis de Márgenes', 'generarAnalisisMargenes')
     .addSeparator()
     .addItem('4) Abrir Dashboard de Márgenes (interno)', '_abrirDashboardMargenesInterno')
     .addItem('5) Abrir Dashboard Pedidos de HOY (interno)', '_abrirDashboardPedidosHoyInterno')
-    .addSeparator();
-
-  const cotizacionMenu = ui.createMenu('6) Realizar una cotización');
-  cotizacionMenu.addItem('Mayorista', 'iniciarCotizacionMayorista');
-  cotizacionMenu.addItem('Al Detalle', 'cotizacionAlDetalle');
-
-  menu.addSubMenu(cotizacionMenu);
-  menu.addToUi();
+    .addSeparator()
+    .addItem('6) Realizar una cotización', 'abrirDashboardCotizacion')
+    .addToUi();
 }
 
 // ============== 1) INPUTS (IMPORTRANGE) ==============
@@ -794,99 +789,83 @@ function collectProductoBaseSugerencias(){
   return Array.from(set).sort((a,b)=>a.localeCompare(b,'es'));
 }
 
-// ============== 6) COTIZACIONES ==============
-function iniciarCotizacionMayorista() {
-  var ui = SpreadsheetApp.getUi();
-  var response = ui.prompt(
-    'Tipo de Cotización',
-    '¿Desea una cotización "General" o "Personalizada"?',
-    ui.ButtonSet.OK_CANCEL);
+// ============== 6) COTIZACIONES (Dashboard) ==============
+function abrirDashboardCotizacion() {
+  const productos = getProductosParaCotizar();
+  if (!productos) return; // Error message is handled inside the function
 
-  if (response.getSelectedButton() == ui.Button.OK) {
-    var choice = response.getResponseText().toLowerCase();
-    if (choice == 'general') {
-      generarCotizacionGeneral();
-    } else if (choice == 'personalizada') {
-      generarCotizacionPersonalizada();
-    } else {
-      ui.alert('Opción no válida. Por favor, escriba "General" o "Personalizada".');
-    }
-  }
+  const tpl = HtmlService.createTemplateFromFile('dashboard_cotizacion.html');
+  tpl.productos = productos;
+
+  const html = tpl.evaluate().setWidth(1000).setHeight(700);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Generador de Cotizaciones');
 }
 
-function generarCotizacionGeneral() {
-  var ui = SpreadsheetApp.getUi();
+function getProductosParaCotizar() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("SKU_A");
 
-  // 1. Prompt for Margin
-  var marginResponse = ui.prompt('Margen de Ganancia', 'Ingrese el margen de ganancia en % (ej. 25):', ui.ButtonSet.OK_CANCEL);
-
-  if (marginResponse.getSelectedButton() != ui.Button.OK) {
-    return; // User cancelled
-  }
-
-  var marginPercent = toNumber(marginResponse.getResponseText());
-  if (isNaN(marginPercent)) {
-    ui.alert('Margen no válido. Por favor, ingrese un número.');
-    return;
-  }
-
-  // 2. Get Product Data from SKU_A sheet
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName("SKU_A");
   if (!sheet) {
     ui.alert('No se encontró la hoja "SKU_A". Por favor, generela primero usando la opción del menú.');
-    return;
+    return null;
   }
 
-  var dataRange = sheet.getDataRange();
-  var values = dataRange.getValues();
+  const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11); // Read until column K
+  const values = dataRange.getValues();
 
-  // 3. Process Products
-  var quoteData = [];
-  var headers = ["Producto", "Costo Base", "IVA (19%)", "Margen", "Precio Final"];
-  quoteData.push(headers);
-
-  // Start from row 1 to skip header row
-  for (var i = 1; i < values.length; i++) {
-    var row = values[i];
-    var productName = row[0]; // Column A: Nombre Producto
-    var baseCost = toNumber(row[10]); // Column K: Costo de Adquisicion
-
-    if (productName && !isNaN(baseCost)) {
-      var iva = baseCost * 0.19;
-      var marginAmount = baseCost * (marginPercent / 100);
-      var finalPrice = baseCost + iva + marginAmount;
-
-      quoteData.push([productName, baseCost, iva, marginAmount, finalPrice]);
+  const productos = values.map(function(row) {
+    const nombre = row[0]; // Column A
+    const costo = toNumber(row[10]); // Column K
+    if (nombre && !isNaN(costo)) {
+      return { nombre: nombre, costo: costo };
     }
+    return null;
+  }).filter(function(p) { return p; });
+
+  if (productos.length === 0) {
+    ui.alert('No se encontraron productos con costo válido en la hoja "SKU_A".');
+    return null;
   }
 
-  if (quoteData.length <= 1) {
-    ui.alert('No se encontraron productos para cotizar en la hoja "SKU_A".');
-    return;
+  return productos;
+}
+
+function crearHojaDeCotizacion(datosCotizacion) {
+  if (!datosCotizacion || !Array.isArray(datosCotizacion) || datosCotizacion.length === 0) {
+    return "Error: No se recibieron datos para generar la cotización.";
   }
 
-  // 4. Create New Sheet
-  var date = new Date();
-  var formattedDate = (date.getMonth() + 1) + '-' + date.getDate() + '-' + date.getFullYear();
-  var newSheetName = 'Cotizacion Mayorista - ' + formattedDate;
-  var newSheet = ss.insertSheet(newSheetName);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const date = new Date();
+  const formattedDate = (date.getMonth() + 1) + '-' + date.getDate() + '-' + date.getFullYear();
+  const newSheetName = 'Cotizacion - ' + formattedDate;
 
-  // 5. Write Data
-  newSheet.getRange(1, 1, quoteData.length, headers.length).setValues(quoteData);
+  const newSheet = ss.insertSheet(newSheetName);
 
-  // 6. Confirmation Message
-  ui.alert('Cotización generada exitosamente en la hoja "' + newSheetName + '".');
-}
+  const headers = ["Producto", "Costo Base", "% IVA", "% Margen", "Precio de Venta"];
+  const outputData = [headers];
 
-function generarCotizacionPersonalizada() {
-  // Placeholder for the custom quote functionality
-  SpreadsheetApp.getUi().alert('Funcionalidad "Personalizada" no implementada todavía.');
-}
+  datosCotizacion.forEach(function(item) {
+    outputData.push([
+      item.nombre,
+      item.costo,
+      item.ivaPct,
+      item.margenPct,
+      item.precioVenta
+    ]);
+  });
 
-function cotizacionAlDetalle() {
-  // Placeholder for the retail quote functionality
-  SpreadsheetApp.getUi().alert('Funcionalidad "Al Detalle" no implementada todavía.');
+  newSheet.getRange(1, 1, outputData.length, headers.length).setValues(outputData);
+
+  // Format columns
+  newSheet.getRange(2, 2, outputData.length - 1, 1).setNumberFormat("$#,##0"); // Costo Base
+  newSheet.getRange(2, 3, outputData.length - 1, 2).setNumberFormat("0.00%"); // IVA % and Margen %
+  newSheet.getRange(2, 5, outputData.length - 1, 1).setNumberFormat("$#,##0"); // Precio de Venta
+
+  newSheet.autoResizeColumns(1, headers.length);
+
+  return 'Cotización generada exitosamente en la hoja "' + newSheetName + '".';
 }
 
 // ============== HELPERS ==============
