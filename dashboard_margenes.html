@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 18px; color: #333; font-size: 15px; }
+    h1 { margin: 0 0 8px; color: #2c3e50; }
+    p.note { margin: 0 0 16px; color: #555; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: auto; }
+    th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; vertical-align: middle; }
+    th { background: #f7f7f7; }
+    tr.accordion { cursor: pointer; }
+    tr.accordion:hover { background: #f1f6fb; }
+    tr.panel { background: #fbfbfb; }
+    tr.subpanel { background: #fdfdfd; }
+    .hidden { display: none; }
+    .right { white-space: nowrap; text-align: right; }
+    .pill { padding: 4px 8px; border-radius: 999px; background: #eef5ff; white-space: nowrap; }
+    .badge-pct { font-weight:700; }
+    .low-margin { background: #fdecea !important; }
+    .low-margin .badge-pct { color:#b00020; }
+    .reviewed { background: #e8f5e9 !important; }
+    .grid { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 12px 16px; }
+    .grid label { font-size: 12px; color: #666; display:block; margin-bottom: 4px; }
+    .grid input, .grid select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; }
+    .actions { margin-top: 12px; display: flex; gap: 10px; }
+    .btn { padding: 9px 14px; border: none; border-radius: 4px; cursor: pointer; background: #2d7dd2; color: #fff; font-weight: 600; }
+    .btn.secondary { background: #7f8c8d; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard de Márgenes</h1>
+  <p class="note">Edita valores. Todo lo guardado tiene <strong>prioridad</strong> sobre los datos de origen (IMPORTRANGE). Marca <strong>Listo</strong> para dejar una fila en verde sin recalcular.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre Producto</th>
+        <th>Cantidad Venta</th>
+        <th>Unidad Venta</th>
+        <th>Precio Último (hoy)</th>
+        <th>Costo de Adquisición</th>
+        <th>Margen $ (hoy)</th>
+        <th>Margen % (hoy)</th>
+        <th>Listo</th>
+      </tr>
+    </thead>
+
+    <tbody id="tbody" data-low-pct="<?= lowPct ?>">
+      <? for (var i = 0; i < data.length; i++) {
+           var row = data[i];
+           var low = (row.margenPctHoy || 0) < lowPct;
+           var classes = 'accordion';
+           if (low) classes += ' low-margin';
+           if (row.revisado) classes += ' reviewed';
+      ?>
+        <tr class="<?= classes ?>" data-row="<?= i ?>">
+          <td><strong><?= row.nombreProducto ?></strong></td>
+          <td class="right">
+            <span class="pill" data-format="cantidad" data-val="<?= row.cantidadVenta ?>"></span>
+          </td>
+          <td><?= row.unidadVenta ?></td>
+          <td class="right" data-format="clp" data-val="<?= row.precioUltimo ?>"></td>
+          <td class="right" data-format="clp" data-val="<?= row.costoAdquisicion ?>"></td>
+          <td class="right" data-format="clp" data-val="<?= row.margenHoy ?>"></td>
+          <td class="right"><span class="badge-pct" data-format="pct" data-val="<?= row.margenPctHoy ?>"></span></td>
+          <td class="center">
+            <input type="checkbox"
+                   class="chk-rev"
+                   data-nombre="<?= row.nombreProducto ?>"
+                   <?= row.revisado ? 'checked' : '' ?>
+                   onclick="event.stopPropagation(); onToggleReviewed(this)">
+          </td>
+        </tr>
+
+        <tr class="panel hidden" id="panel-<?= i ?>">
+          <td colspan="8">
+            <div class="panel-inner">
+              <div class="grid">
+                <!-- Overrides por Nombre Producto -->
+                <div>
+                  <label><b>Nombre Producto</b></label>
+                  <input type="text" value="<?= row.nombreProducto ?>" disabled>
+                </div>
+                <div>
+                  <label>Cantidad Venta (override)</label>
+                  <input type="text" inputmode="decimal" id="cantVenta-<?= i ?>" value="<?= row.cantidadVenta || '' ?>" placeholder="Ej: 0,25">
+                </div>
+                <div>
+                  <label>Unidad Venta (override)</label>
+                  <input type="text" id="uniVenta-<?= i ?>" value="<?= row.unidadVenta || '' ?>" placeholder="Unidad / Kilo">
+                </div>
+                <div>
+                  <label>Precio Último (hoy) CLP (override)</label>
+                  <input type="number" step="1" id="precioUltimo-<?= i ?>" value="<?= row.precioUltimo || '' ?>" placeholder="Ej: 8990">
+                </div>
+                <div>
+                  <label>Costo de Adquisición CLP (override)</label>
+                  <input type="number" step="1" id="costoAdq-<?= i ?>" value="<?= row.costoAdquisicion || '' ?>" placeholder="Calculado">
+                </div>
+                <div>
+                  <label>Margen $ (hoy) CLP (override)</label>
+                  <input type="number" step="1" id="margenHoy-<?= i ?>" value="<?= row.margenHoy || '' ?>" placeholder="Calculado">
+                </div>
+
+                <!-- Ediciones por Producto Base -->
+                <div>
+                  <label><b>Producto Base</b> (sugerencias / escribir nuevo)</label>
+                  <input type="text" id="base-<?= i ?>" value="<?= row.productoBase || '' ?>" list="bases-list">
+                </div>
+                <div>
+                  <label>CostoCompra CLP (por Base)</label>
+                  <input type="number" step="1" id="costoCompra-<?= i ?>" value="<?= row.costoCompra || '' ?>" placeholder="Ej: 200000">
+                </div>
+                <div>
+                  <label>Formato Adquisición (por Base)</label>
+                  <input type="text" id="formato-<?= i ?>" value="<?= row.formatoAdq || '' ?>" placeholder="Caja / Saco / Paquete">
+                </div>
+                <div>
+                  <label>Cantidad Adquisición (por Base)</label>
+                  <input type="text" inputmode="decimal" id="cantAdq-<?= i ?>" value="<?= row.cantidadAdq || '' ?>" placeholder="Ej: 400 o 0,5">
+                </div>
+                <div>
+                  <label>Unidad Adquisición (por Base)</label>
+                  <input type="text" id="uniAdq-<?= i ?>" value="<?= row.unidadAdq || '' ?>" placeholder="Unidad / Kilo / Bandeja">
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn" onclick="guardar(<?= i ?>, this)">Guardar y recalcular</button>
+                <button class="btn secondary" onclick="cerrar(<?= i ?>)">Cerrar</button>
+              </div>
+              <div id="msg-<?= i ?>" style="margin-top:6px;color:#2c3e50;"></div>
+            </div>
+          </td>
+        </tr>
+      <? } ?>
+    </tbody>
+  </table>
+
+  <!-- Sugerencias de Producto Base -->
+  <datalist id="bases-list">
+    <? for (var j = 0; j < bases.length; j++) { ?>
+      <option value="<?= bases[j] ?>"></option>
+    <? } ?>
+  </datalist>
+
+  <script>
+    function formatCLP(n) {
+      var x = Number(n);
+      if (!isFinite(x)) return (n==null ? "" : String(n));
+      return x.toLocaleString('es-CL', {style:'currency', currency:'CLP', minimumFractionDigits:0, maximumFractionDigits:0});
+    }
+    function formatPct(p) {
+      var x = Number(p); if(!isFinite(x)) x = 0;
+      return (x*100).toLocaleString('es-CL', {maximumFractionDigits:0}) + '%';
+    }
+    function formatCantidad(v) {
+      if (v==null || v==="") return "";
+      var s = String(v);
+      if (s.indexOf('.') >= 0) s = s.replace('.', ',');
+      return s;
+    }
+    function applyFormats(){
+      document.querySelectorAll('[data-format]').forEach(function(el){
+        var val = el.getAttribute('data-val');
+        var fmt = el.getAttribute('data-format');
+        if (fmt === 'clp') el.textContent = formatCLP(val);
+        else if (fmt === 'pct') el.textContent = formatPct(val);
+        else if (fmt === 'cantidad') el.textContent = formatCantidad(val);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      applyFormats();
+      document.querySelectorAll('tr.accordion').forEach(function(row){
+        row.addEventListener('click', function(){
+          var idx = this.getAttribute('data-row');
+          var panel = document.getElementById('panel-' + idx);
+          if (panel) panel.classList.toggle('hidden');
+        });
+      });
+    });
+
+    // convertir valores local a number
+    function toNumberLocal(v) {
+      if (typeof v === 'number') return v;
+      if (v == null) return NaN;
+      var s = String(v).trim();
+      if (!s) return NaN;
+      s = s.replace(/\s+/g,'').replace(/\$/g,'');
+      var hasDot = s.indexOf('.') >= 0;
+      var hasComma = s.indexOf(',') >= 0;
+      if (hasDot && hasComma) {
+        s = s.replace(/\./g,'').replace(',', '.');
+      } else if (hasComma && !hasDot) {
+        s = s.replace(',', '.');
+      }
+      var n = parseFloat(s);
+      return isNaN(n) ? NaN : n;
+    }
+
+    function recalc(i){
+      var costoCompra = toNumberLocal(document.getElementById('costoCompra-'+i).value);
+      var cantAdq     = toNumberLocal(document.getElementById('cantAdq-'+i).value);
+      var cantVenta   = toNumberLocal(document.getElementById('cantVenta-'+i).value);
+      var precioUlt   = toNumberLocal(document.getElementById('precioUltimo-'+i).value);
+
+      var costoAdq = NaN, margenHoy = NaN;
+
+      if (!isNaN(costoCompra) && costoCompra>0 && !isNaN(cantAdq) && cantAdq>0 && !isNaN(cantVenta) && cantVenta>=0){
+        costoAdq = Math.round((costoCompra / cantAdq) * cantVenta);
+      }
+      if (!isNaN(precioUlt) && !isNaN(costoAdq)) margenHoy = Math.round(precioUlt - costoAdq);
+
+      if (!isNaN(costoAdq)) document.getElementById('costoAdq-'+i).value = costoAdq;
+      if (!isNaN(margenHoy)) document.getElementById('margenHoy-'+i).value = margenHoy;
+
+      var row = document.querySelector('tr.accordion[data-row="'+i+'"]');
+      if (row){
+        var pill = row.children[1].querySelector('.pill');
+        if (pill && !isNaN(cantVenta)) pill.textContent = formatCantidad(String(cantVenta).replace('.', ','));
+        if (!isNaN(precioUlt)) row.children[3].textContent = formatCLP(precioUlt);
+        if (!isNaN(costoAdq)) row.children[4].textContent = formatCLP(costoAdq);
+        if (!isNaN(margenHoy)) row.children[5].textContent = formatCLP(margenHoy);
+        if (!isNaN(precioUlt) && precioUlt>0 && !isNaN(margenHoy)) {
+          var pct = margenHoy / precioUlt;
+          row.children[6].querySelector('.badge-pct').textContent = formatPct(pct);
+          var lowPct = Number(document.getElementById('tbody').getAttribute('data-low-pct')) || 0.15;
+          if (pct < lowPct) row.classList.add('low-margin'); else row.classList.remove('low-margin');
+        }
+      }
+    }
+
+    // Campos que desencadenan recálculo
+    ['costoCompra','cantAdq','cantVenta','precioUltimo'].forEach(function(prefix){
+      document.addEventListener('input', function(e){
+        if (e.target && e.target.id && e.target.id.indexOf(prefix+'-') === 0){
+          var i = e.target.id.split('-')[1];
+          recalc(i);
+        }
+      }, true);
+    });
+
+    function cerrar(i){ document.getElementById('panel-'+i).classList.add('hidden'); }
+
+    function guardar(i, btn){
+      var payload = {
+        nombreProducto : document.querySelectorAll('tr.accordion')[i].children[0].innerText.trim(),
+        cantidadVenta  : document.getElementById('cantVenta-'+i).value,
+        unidadVenta    : document.getElementById('uniVenta-'+i).value,
+        precioUltimo   : document.getElementById('precioUltimo-'+i).value,
+        costoAdquisicion: document.getElementById('costoAdq-'+i).value,
+        margenHoy      : document.getElementById('margenHoy-'+i).value,
+        productoBase   : document.getElementById('base-'+i).value,
+        costoCompra    : document.getElementById('costoCompra-'+i).value,
+        formato        : document.getElementById('formato-'+i).value,
+        cantidadAdq    : document.getElementById('cantAdq-'+i).value,
+        unidadAdq      : document.getElementById('uniAdq-'+i).value
+      };
+      btn.disabled = true; var old = btn.textContent; btn.textContent = 'Guardando...';
+      google.script.run
+        .withSuccessHandler(function(resp){
+          document.getElementById('msg-'+i).textContent = resp;
+          btn.disabled = false; btn.textContent = old;
+          if (resp.indexOf('¡Cambios guardados') === 0) window.top.location.reload();
+        })
+        .withFailureHandler(function(err){
+          alert('Error: ' + err.message);
+          btn.disabled = false; btn.textContent = old;
+        })
+        .saveDashboardEdits(payload);
+    }
+
+    // Revisar / no revisar
+    function onToggleReviewed(cb){
+      var nombre = cb.getAttribute('data-nombre');
+      var checked = cb.checked;
+      google.script.run
+        .withSuccessHandler(function(){
+          var tr = cb.closest('tr.accordion');
+          if (checked) tr.classList.add('reviewed'); else tr.classList.remove('reviewed');
+        })
+        .withFailureHandler(function(err){
+          alert('Error al guardar revisión: ' + err.message);
+          cb.checked = !checked;
+        })
+        .toggleRevision(nombre, checked);
+    }
+  </script>
+</body>
+</html>
