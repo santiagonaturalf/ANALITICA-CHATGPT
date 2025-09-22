@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 18px; color: #333; font-size: 15px; }
+    h1 { margin: 0 0 8px; color: #2c3e50; }
+    p.note { margin: 0 0 10px; color: #555; }
+    .resume { display:flex; gap:16px; flex-wrap:wrap; margin: 10px 0 18px; }
+    .card { border:1px solid #ddd; border-radius:8px; padding:10px 14px; background:#fafafa; }
+    .card h3{ margin:0 0 6px; font-size:14px; color:#666; font-weight:600;}
+    .card .v{ font-size:20px; font-weight:700; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: auto; }
+    th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; vertical-align: middle; }
+    th { background: #f7f7f7; }
+    tr.accordion { cursor: pointer; }
+    tr.accordion:hover { background: #f1f6fb; }
+    tr.panel    { background: #fbfbfb; }
+    tr.subpanel { background: #fdfdfd; }
+    .hidden { display: none; }
+    .right { white-space: nowrap; text-align: right; }
+    .center { text-align: center; }
+    .pill { padding: 4px 8px; border-radius: 999px; background: #eef5ff; white-space: nowrap; }
+    .badge-pct { font-weight:700; }
+    .low-margin { background: #fdecea !important; }
+    .low-margin .badge-pct { color:#b00020; }
+    .reviewed { background: #e8f5e9 !important; }
+    .grid { display:grid; grid-template-columns: repeat(5, minmax(220px,1fr)); gap:12px 16px; }
+    .grid label { font-size:12px; color:#666; display:block; margin-bottom:4px; }
+    .grid input { width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px;}
+    .actions { margin-top: 12px; display:flex; gap:10px;}
+    .btn { padding: 9px 14px; border:none; border-radius:4px; cursor:pointer; background:#2d7dd2; color:#fff; font-weight:600;}
+    .btn.secondary { background:#7f8c8d;}
+  </style>
+</head>
+<body>
+  <h1>Dashboard Pedidos de HOY</h1>
+  <p class="note">Resumen general del día y detalle por pedido. En el sub‑acordeón puedes editar con el mismo formulario del Dashboard de Márgenes.</p>
+
+  <!-- Filtros de búsqueda y categoría -->
+  <div class="filters" style="margin-bottom: 12px;">
+    <input type="text" id="search-input" placeholder="Buscar producto..." style="padding:6px 10px; margin-right:8px;">
+    <select id="cat-filter" style="padding:6px 10px;">
+      <option value="">Todas las categorías</option>
+      <? for (var k = 0; k < categorias.length; k++) { ?>
+        <option value="<?= categorias[k] ?>"><?= categorias[k] ?></option>
+      <? } ?>
+    </select>
+  </div>
+
+  <div class="resume">
+    <div class="card"><h3>Pedidos</h3><div class="v" id="r-ped"></div></div>
+    <div class="card"><h3>Venta Día</h3><div class="v" id="r-venta"></div></div>
+    <div class="card"><h3>Costo Día</h3><div class="v" id="r-costo"></div></div>
+    <div class="card"><h3>Margen Día</h3><div class="v" id="r-margen"></div></div>
+    <div class="card"><h3>% Margen Día</h3><div class="v" id="r-pct"></div></div>
+    <div class="card"><h3>Ticket Promedio</h3><div class="v" id="r-ticket"></div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Número de pedido</th>
+        <th>Nombre completo</th>
+        <th class="right">Venta Total pedido</th>
+        <th class="right">Costo Total pedido</th>
+        <th class="right">Margen Pedido</th>
+        <th class="right">% Margen Pedido</th>
+      </tr>
+    </thead>
+    <tbody id="tbody" data-low-pct="<?= lowPct ?>">
+      <? for (var i = 0; i < pedidos.length; i++) {
+           var p = pedidos[i];
+           var low = (p.pct || 0) < lowPct;
+      ?>
+        <tr class="accordion <?= low ? 'low-margin' : '' ?>" data-pidx="<?= i ?>">
+          <td><strong><?= p.numero ?></strong></td>
+          <td><?= p.cliente ?></td>
+          <td class="right" data-format="clp" data-val="<?= p.totVenta ?>"></td>
+          <td class="right" data-format="clp" data-val="<?= p.totCosto ?>"></td>
+          <td class="right" data-format="clp" data-val="<?= p.totMargen ?>"></td>
+          <td class="right"><span class="badge-pct" data-format="pct" data-val="<?= p.pct ?>"></span></td>
+        </tr>
+
+        <tr class="panel hidden" id="panel-<?= i ?>">
+          <td colspan="6" style="padding:0;">
+            <table style="width:100%; border:none; border-top:1px solid #ddd;">
+              <thead>
+                <tr>
+                  <th>Nombre Producto</th>
+                  <th class="right">Cantidad</th>
+                  <th class="right">Precio actual del producto</th>
+                  <th class="right">Costo Adquisición (unit)</th>
+                  <th class="right">Margen del Producto (línea)</th>
+                  <th class="right">% Margen Producto</th>
+                  <th class="center">Listo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <? for (var j = 0; j < p.lineas.length; j++) {
+                     var ln = p.lineas[j];
+                     var lowP = (ln.pctUnidad||0) < lowPct;
+                     var classes = 'accordion sub';
+                     if (lowP) classes += ' low-margin';
+                     if (ln.revisado) classes += ' reviewed';
+                ?>
+                  <tr class="<?= classes ?>" data-pidx="<?= i ?>" data-lidx="<?= j ?>" data-categoria="<?= ln.categoria ?>">
+                    <td><strong><?= ln.nombreProducto ?></strong></td>
+                    <td class="right"><span class="pill" data-format="cantidad" data-val="<?= ln.cantidad ?>"></span></td>
+                    <td class="right" data-format="clp" data-val="<?= ln.precioUnit ?>"></td>
+                    <td class="right" data-format="clp" data-val="<?= ln.costoUnit ?>"></td>
+                    <td class="right" data-format="clp" data-val="<?= ln.margenLinea ?>"></td>
+                    <td class="right"><span class="badge-pct" data-format="pct" data-val="<?= ln.pctUnidad ?>"></span></td>
+                    <td class="center">
+                      <input type="checkbox"
+                             class="chk-rev"
+                             data-nombre="<?= ln.nombreProducto ?>"
+                             <?= ln.revisado ? 'checked' : '' ?>
+                             onclick="event.stopPropagation(); onToggleReviewed(this)">
+                    </td>
+                  </tr>
+
+                  <!-- SUB ACORDEÓN -->
+                  <tr class="subpanel hidden" id="subpanel-<?= i ?>-<?= j ?>">
+                    <td colspan="7">
+                      <div class="panel-inner">
+                        <div class="grid">
+                          <div>
+                            <label><b>Nombre Producto</b></label>
+                            <input type="text" value="<?= ln.nombreProducto ?>" disabled>
+                          </div>
+                          <div>
+                            <label>Cantidad Venta (override)</label>
+                            <input type="text" inputmode="decimal" id="cantVenta-<?= i ?>-<?= j ?>" value="<?= ln.cantVenta || '' ?>" placeholder="Ej: 0,25">
+                          </div>
+                          <div>
+                            <label>Unidad Venta (override)</label>
+                            <input type="text" id="uniVenta-<?= i ?>-<?= j ?>" value="<?= ln.uniVenta || '' ?>" placeholder="Unidad / Kilo">
+                          </div>
+                          <div>
+                            <label>Precio Último (hoy) CLP (override)</label>
+                            <input type="number" step="1" id="precioUltimo-<?= i ?>-<?= j ?>" value="<?= ln.precioUnit || '' ?>" placeholder="Ej: 8990">
+                          </div>
+                          <div>
+                            <label>Costo de Adquisición CLP (override)</label>
+                            <input type="number" step="1" id="costoAdq-<?= i ?>-<?= j ?>" value="<?= ln.costoUnit || '' ?>" placeholder="Calculado">
+                          </div>
+                          <div>
+                            <label>Margen $ (hoy) CLP (override)</label>
+                            <input type="number" step="1" id="margenHoy-<?= i ?>-<?= j ?>" value="" placeholder="Calculado">
+                          </div>
+
+                          <div>
+                            <label><b>Producto Base</b> (sugerencias / escribir nuevo)</label>
+                            <input type="text" id="base-<?= i ?>-<?= j ?>" value="<?= ln.base || '' ?>" list="bases-list">
+                          </div>
+                          <div>
+                            <label>CostoCompra CLP (por Base)</label>
+                            <input type="number" step="1" id="costoCompra-<?= i ?>-<?= j ?>" value="<?= ln.costoCompra || '' ?>" placeholder="Ej: 200000">
+                          </div>
+                          <div>
+                            <label>Formato Adquisición (por Base)</label>
+                            <input type="text" id="formato-<?= i ?>-<?= j ?>" value="<?= ln.formatoAdq || '' ?>" placeholder="Caja / Saco / Paquete">
+                          </div>
+                          <div>
+                            <label>Cantidad Adquisición (por Base)</label>
+                            <input type="text" inputmode="decimal" id="cantAdq-<?= i ?>-<?= j ?>" value="<?= ln.cantAdq || '' ?>" placeholder="Ej: 400 o 0,5">
+                          </div>
+                          <div>
+                            <label>Unidad Adquisición (por Base)</label>
+                            <input type="text" id="uniAdq-<?= i ?>-<?= j ?>" value="<?= ln.uniAdq || '' ?>" placeholder="Unidad / Kilo / Bandeja">
+                          </div>
+                        </div>
+
+                        <div class="actions">
+                          <button class="btn" onclick="guardarLinea(<?= i ?>, <?= j ?>, this)">Guardar y recalcular</button>
+                          <button class="btn secondary" onclick="cerrarLinea(<?= i ?>, <?= j ?>)">Cerrar</button>
+                        </div>
+                        <div id="msg-<?= i ?>-<?= j ?>" style="margin-top:6px;color:#2c3e50;"></div>
+                      </div>
+                    </td>
+                  </tr>
+                <? } ?>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      <? } ?>
+    </tbody>
+  </table>
+
+  <datalist id="bases-list">
+    <? for (var b = 0; b < bases.length; b++) { ?>
+      <option value="<?= bases[b] ?>"></option>
+    <? } ?>
+  </datalist>
+
+  <script>
+    // Formateo
+    function formatCLP(n){ var x=Number(n); if(!isFinite(x)) return (n==null?"":String(n)); return x.toLocaleString('es-CL',{style:'currency',currency:'CLP',minimumFractionDigits:0,maximumFractionDigits:0}); }
+    function formatPct(p){ var x=Number(p); if(!isFinite(x)) x=0; return (x*100).toLocaleString('es-CL',{maximumFractionDigits:0})+'%'; }
+    function formatCantidad(v){ if(v==null||v==="")return ""; var s=String(v); if(s.indexOf('.')>=0) s=s.replace('.',','); return s; }
+    function applyFormats(){
+      document.querySelectorAll('[data-format]').forEach(function(el){
+        var val=el.getAttribute('data-val'); var fmt=el.getAttribute('data-format');
+        if(fmt==='clp') el.textContent = formatCLP(val);
+        else if(fmt==='pct') el.textContent = formatPct(val);
+        else if(fmt==='cantidad') el.textContent = formatCantidad(val);
+      });
+    }
+    // Resumen
+    function setResumen(){
+      document.getElementById('r-ped').textContent   = <?= resumen.pedidos ?>.toLocaleString('es-CL');
+      document.getElementById('r-venta').textContent = formatCLP(<?= resumen.venta ?>);
+      document.getElementById('r-costo').textContent = formatCLP(<?= resumen.costo ?>);
+      document.getElementById('r-margen').textContent= formatCLP(<?= resumen.margen ?>);
+      document.getElementById('r-pct').textContent   = formatPct(<?= resumen.pct ?>);
+      document.getElementById('r-ticket').textContent= formatCLP(<?= resumen.ticket ?>);
+    }
+
+    // Accordion behavior
+    document.addEventListener('DOMContentLoaded', function(){
+      setResumen();
+      applyFormats();
+
+      document.querySelectorAll('tr.accordion').forEach(function(row){
+        row.addEventListener('click', function(){
+          var lidx = this.getAttribute('data-lidx');
+          var pidx = this.getAttribute('data-pidx');
+          if (lidx != null && lidx !== '') {
+            var sub = document.getElementById('subpanel-'+pidx+'-'+lidx);
+            if (sub) sub.classList.toggle('hidden');
+          } else {
+            var panel=document.getElementById('panel-'+pidx);
+            if(panel) panel.classList.toggle('hidden');
+          }
+        });
+      });
+      // filter listeners
+      var searchInput = document.getElementById('search-input');
+      var catFilter   = document.getElementById('cat-filter');
+      if (searchInput) searchInput.addEventListener('input', filterRows);
+      if (catFilter)   catFilter.addEventListener('change', filterRows);
+    });
+
+    // Convertir a number local
+    function toNumberLocal(v){
+      if (typeof v === 'number') return v;
+      if (v == null) return NaN;
+      var s = String(v).trim();
+      if (!s) return NaN;
+      s = s.replace(/\s+/g,'').replace(/\$/g,'');
+      var hasDot = s.indexOf('.') >= 0;
+      var hasComma = s.indexOf(',') >= 0;
+      if (hasDot && hasComma) {
+        s = s.replace(/\./g,'').replace(',', '.');
+      } else if (hasComma && !hasDot) {
+        s = s.replace(',', '.');
+      }
+      var n = parseFloat(s);
+      return isNaN(n) ? NaN : n;
+    }
+
+    // Recalc local en subacordeón
+    function recalcLinea(p,l){
+      var costoCompra = toNumberLocal(document.getElementById('costoCompra-'+p+'-'+l).value);
+      var cantAdq     = toNumberLocal(document.getElementById('cantAdq-'+p+'-'+l).value);
+      var cantVenta   = toNumberLocal(document.getElementById('cantVenta-'+p+'-'+l).value);
+      var precioUlt   = toNumberLocal(document.getElementById('precioUltimo-'+p+'-'+l).value);
+
+      var costoAdq = NaN, margenHoy = NaN;
+      if (!isNaN(costoCompra) && costoCompra>0 && !isNaN(cantAdq) && cantAdq>0 && !isNaN(cantVenta) && cantVenta>=0){
+        costoAdq = Math.round((costoCompra / cantAdq) * cantVenta);
+      }
+      if (!isNaN(precioUlt) && !isNaN(costoAdq)) margenHoy = Math.round(precioUlt - costoAdq);
+
+      if (!isNaN(costoAdq)) document.getElementById('costoAdq-'+p+'-'+l).value = costoAdq;
+      if (!isNaN(margenHoy)) document.getElementById('margenHoy-'+p+'-'+l).value = margenHoy;
+
+      // update row visually
+      var row = document.querySelector('tr.accordion.sub[data-pidx="'+p+'"][data-lidx="'+l+'"]');
+      if (row) {
+        var cells = row.querySelectorAll('td');
+        // cantidad
+        if (!isNaN(cantVenta)) {
+          var pill = cells[1].querySelector('.pill');
+          if (pill) pill.textContent = formatCantidad(String(cantVenta).replace('.', ','));
+        }
+        // precio
+        if (!isNaN(precioUlt)) cells[2].textContent = formatCLP(precioUlt);
+        // costo
+        if (!isNaN(costoAdq)) cells[3].textContent = formatCLP(costoAdq);
+        // margen
+        if (!isNaN(margenHoy)) cells[4].textContent = formatCLP(margenHoy);
+        // pct
+        if (!isNaN(precioUlt) && precioUlt>0 && !isNaN(margenHoy)) {
+          var pct = margenHoy / precioUlt;
+          var badge = cells[5].querySelector('.badge-pct');
+          if (badge) badge.textContent = formatPct(pct);
+          var lowPct = Number(document.getElementById('tbody').getAttribute('data-low-pct')) || 0.15;
+          if (pct < lowPct) row.classList.add('low-margin'); else row.classList.remove('low-margin');
+        }
+      }
+    }
+
+    // input listeners para subpanel
+    ['costoCompra','cantAdq','cantVenta','precioUltimo'].forEach(function(prefix){
+      document.addEventListener('input', function(e){
+        if (e.target && e.target.id && e.target.id.indexOf(prefix+'-')===0){
+          var parts = e.target.id.split('-');
+          recalcLinea(parts[1], parts[2]);
+        }
+      }, true);
+    });
+
+    function cerrarLinea(p,l){ document.getElementById('subpanel-'+p+'-'+l).classList.add('hidden'); }
+
+    function guardarLinea(p,l,btn){
+      var root = 'subpanel-'+p+'-'+l;
+      var nombre = document.querySelector('#'+root+' input[disabled]').value.trim();
+      var payload = {
+        nombreProducto : nombre,
+        cantidadVenta  : document.getElementById('cantVenta-'+p+'-'+l).value,
+        unidadVenta    : document.getElementById('uniVenta-'+p+'-'+l).value,
+        precioUltimo   : document.getElementById('precioUltimo-'+p+'-'+l).value,
+        costoAdquisicion: document.getElementById('costoAdq-'+p+'-'+l).value,
+        margenHoy      : document.getElementById('margenHoy-'+p+'-'+l).value,
+        productoBase   : document.getElementById('base-'+p+'-'+l).value,
+        costoCompra    : document.getElementById('costoCompra-'+p+'-'+l).value,
+        formato        : document.getElementById('formato-'+p+'-'+l).value,
+        cantidadAdq    : document.getElementById('cantAdq-'+p+'-'+l).value,
+        unidadAdq      : document.getElementById('uniAdq-'+p+'-'+l).value
+      };
+      btn.disabled = true; var old=btn.textContent; btn.textContent='Guardando...';
+      google.script.run
+        .withSuccessHandler(function(resp){
+          document.getElementById('msg-'+p+'-'+l).textContent = resp;
+          btn.disabled=false; btn.textContent=old;
+          if (resp.indexOf('¡Cambios guardados')===0) window.top.location.reload();
+        })
+        .withFailureHandler(function(err){
+          alert('Error: '+err.message);
+          btn.disabled=false; btn.textContent=old;
+        })
+        .saveDashboardEdits(payload);
+    }
+
+    // Toggle revisión
+    function onToggleReviewed(cb){
+      var nombre = cb.getAttribute('data-nombre');
+      var checked = cb.checked;
+      google.script.run
+        .withSuccessHandler(function(){
+          var tr = cb.closest('tr.accordion.sub');
+          if (tr){
+            if (checked) tr.classList.add('reviewed'); else tr.classList.remove('reviewed');
+          }
+        })
+        .withFailureHandler(function(err){
+          alert('Error al guardar revisión: ' + err.message);
+          cb.checked = !checked;
+        })
+        .toggleRevision(nombre, checked);
+    }
+
+    // Filtro por nombre y categoría
+    function filterRows(){
+      var term = document.getElementById('search-input') ? document.getElementById('search-input').value.toLowerCase().trim() : '';
+      var cat = document.getElementById('cat-filter') ? document.getElementById('cat-filter').value : '';
+      // Filtrar filas de productos
+      document.querySelectorAll('tr.accordion.sub').forEach(function(row){
+        var name = row.querySelector('td strong').textContent.toLowerCase();
+        var rowCat = row.getAttribute('data-categoria') || "";
+        var matchName = (term === '' || name.indexOf(term) >= 0);
+        var matchCat  = (cat === '' || rowCat === cat);
+        if (matchName && matchCat) {
+          row.style.display = '';
+          var p = row.getAttribute('data-pidx'), l = row.getAttribute('data-lidx');
+          var sub = document.getElementById('subpanel-'+p+'-'+l);
+          if (sub) sub.style.display = '';
+        } else {
+          row.style.display = 'none';
+          var p = row.getAttribute('data-pidx'), l = row.getAttribute('data-lidx');
+          var sub = document.getElementById('subpanel-'+p+'-'+l);
+          if (sub) sub.style.display = 'none';
+        }
+      });
+      // Mostrar u ocultar filas de pedido principal según sus productos
+      document.querySelectorAll('tr.accordion:not(.sub)').forEach(function(ordRow){
+        var pidx = ordRow.getAttribute('data-pidx');
+        var panel = document.getElementById('panel-'+pidx);
+        if (!panel) return;
+        var hasVisible = false;
+        panel.querySelectorAll('tr.accordion.sub').forEach(function(row){
+          if (row.style.display !== 'none') hasVisible = true;
+        });
+        if (hasVisible) {
+          ordRow.style.display = '';
+          panel.style.display = '';
+        } else {
+          ordRow.style.display = 'none';
+          panel.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
