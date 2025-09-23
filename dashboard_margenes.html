@@ -27,11 +27,32 @@
     .actions { margin-top: 12px; display: flex; gap: 10px; }
     .btn { padding: 9px 14px; border: none; border-radius: 4px; cursor: pointer; background: #2d7dd2; color: #fff; font-weight: 600; }
     .btn.secondary { background: #7f8c8d; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; padding: 16px; background-color: #f7f7f7; border: 1px solid #ddd; border-radius: 4px; }
+    .summary-item { text-align: center; }
+    .summary-item .label { font-size: 14px; color: #666; margin-bottom: 4px; }
+    .summary-item .value { font-size: 24px; font-weight: 600; color: #2c3e50; }
   </style>
 </head>
 <body>
   <h1>Dashboard de Márgenes</h1>
   <p class="note">Edita valores. Todo lo guardado tiene <strong>prioridad</strong> sobre los datos de origen (IMPORTRANGE). Marca <strong>Listo</strong> para dejar una fila en verde sin recalcular.</p>
+
+  <? if (typeof summary !== 'undefined') { ?>
+  <div class="summary-grid">
+    <div class="summary-item">
+      <div class="label">Venta Total</div>
+      <div class="value" id="summary-venta"></div>
+    </div>
+    <div class="summary-item">
+      <div class="label">Costo de Adquisición</div>
+      <div class="value" id="summary-costo"></div>
+    </div>
+    <div class="summary-item">
+      <div class="label">Margen Hoy Total</div>
+      <div class="value" id="summary-margen"></div>
+    </div>
+  </div>
+  <? } ?>
 
   <table>
     <thead>
@@ -174,6 +195,13 @@
 
     document.addEventListener('DOMContentLoaded', function(){
       applyFormats();
+      <? if (typeof summary !== 'undefined') { ?>
+        if (document.getElementById('summary-venta')) {
+          document.getElementById('summary-venta').textContent = formatCLP(<?= summary.venta ?>);
+          document.getElementById('summary-costo').textContent = formatCLP(<?= summary.costo ?>);
+          document.getElementById('summary-margen').textContent = formatCLP(<?= summary.margen ?>);
+        }
+      <? } ?>
       document.querySelectorAll('tr.accordion').forEach(function(row){
         row.addEventListener('click', function(){
           var idx = this.getAttribute('data-row');

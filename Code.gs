@@ -327,14 +327,23 @@ function doGet() {
   const iCostoAdq = idx("Costo de Adquisicion");
 
   const rows=[];
+  const summary = { venta: 0, costo: 0, margen: 0 };
+
   for (let r=1;r<vals.length;r++){
     const v=vals[r];
     const precioUlt = toNumber(v[iLast]);
     const costoAdq  = toNumber(v[iCostoAdq]);
-    const margenHoy = toNumber(v[iMHoy]);
-    const mPctHoy   = (!isNaN(precioUlt) && precioUlt>0)
-      ? ((isNaN(margenHoy)? (precioUlt - (isNaN(costoAdq)?0:costoAdq)) : margenHoy) / precioUlt)
-      : 0;
+    let   margenHoy = toNumber(v[iMHoy]);
+
+    // Si el margen de la hoja es invalido, recalcularlo para la fila.
+    if (isNaN(margenHoy)) {
+      margenHoy = (!isNaN(precioUlt) && !isNaN(costoAdq)) ? (precioUlt - costoAdq) : 0;
+    }
+    const mPctHoy = (!isNaN(precioUlt) && precioUlt > 0) ? (margenHoy / precioUlt) : 0;
+
+    // Sumar para el resumen
+    if (!isNaN(precioUlt)) summary.venta += precioUlt;
+    if (!isNaN(costoAdq))  summary.costo += costoAdq;
 
     const nombre = v[iNombre];
     rows.push({
@@ -348,16 +357,20 @@ function doGet() {
       unidadVenta:      v[iUniV],
       precioUltimo:     v[iLast],
       costoAdquisicion: v[iCostoAdq],
-      margenHoy:        v[iMHoy],
+      margenHoy:        margenHoy,
       margenPctHoy:     mPctHoy,
       revisado:         !!revisadoMap[nombre]
     });
   }
 
+  // Calcular el margen total a partir de los totales.
+  summary.margen = summary.venta - summary.costo;
+
   const tpl = HtmlService.createTemplateFromFile('dashboard_margenes.html');
-  tpl.data   = rows;
-  tpl.bases  = bases;
-  tpl.lowPct = DASH_LOW_PCT_RED; // 0.15
+  tpl.data    = rows;
+  tpl.bases   = bases;
+  tpl.lowPct  = DASH_LOW_PCT_RED; // 0.15
+  tpl.summary = summary;
   return tpl.evaluate()
             .setTitle("Dashboard de Márgenes (interno)")
             .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
